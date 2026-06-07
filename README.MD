@@ -7,7 +7,3 @@ sdk: docker
 app_port: 7860
 pinned: false
 ---
-
-# Home Service Chatbot
-
-RAG chatbot built with FastAPI, LangChain, ChromaDB and Groq.

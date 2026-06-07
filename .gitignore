@@ -1,0 +1,8 @@
+pycache/
+*.pyc
+
+db/
+
+retrieved_chunks.txt
+
+.env

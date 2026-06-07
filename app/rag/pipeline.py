@@ -1,6 +1,5 @@
 import os
 
-from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 
@@ -21,19 +20,6 @@ embeddings = HuggingFaceEmbeddings(
 )
 
 # =========================================================
-# LOAD EXISTING CHROMA ONLY
-# =========================================================
-
-vector_store = Chroma(
-    persist_directory="db/chroma",
-    embedding_function=embeddings
-)
-
-retriever = vector_store.as_retriever(
-    search_kwargs={"k": 5}
-)
-
-# =========================================================
 # LLM
 # =========================================================
 
@@ -42,12 +28,13 @@ llm = ChatGroq(
 )
 
 # =========================================================
-# TEST
+# TEST FUNCTION
 # =========================================================
 
-def ask(user_message, chat_history):
-    docs = retriever.invoke(user_message)
+def ask(user_message, chat_history=None):
+    response = llm.invoke(user_message)
 
     return {
-        "chunks_found": len(docs)
+        "answer": response.content,
+        "chunks_found": 0
     }

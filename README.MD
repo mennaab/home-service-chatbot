@@ -1,3 +1,12 @@
+---
+title: Home Service Chatbot
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # RAG Chatbot API
 
 AI chatbot API built using FastAPI + LangChain + RAG architecture.

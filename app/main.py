@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 
 from app.models.request_models import ChatRequest
-
 from app.models.response_models import (
     ChatResponse,
     ChatData,
@@ -10,9 +9,9 @@ from app.models.response_models import (
 
 from app.rag.pipeline import ask
 
-from app.rag.memory import (
-    get_history,
-    save_message
+from langchain_core.messages import (
+    HumanMessage,
+    AIMessage
 )
 
 app = FastAPI()
@@ -21,7 +20,6 @@ app = FastAPI()
 # =========================================
 # HEALTH ENDPOINT
 # =========================================
-
 @app.get("/health")
 def health():
     return {
@@ -32,33 +30,34 @@ def health():
 # =========================================
 # CHAT ENDPOINT
 # =========================================
-
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
 
     try:
 
-        # get old history
-        history = get_history(request.session_id)
+        history = []
 
-        # ask rag
+        for msg in request.chat_history:
+
+            if msg.role.value == "user":
+
+                history.append(
+                    HumanMessage(
+                        content=msg.text
+                    )
+                )
+
+            else:
+
+                history.append(
+                    AIMessage(
+                        content=msg.text
+                    )
+                )
+
         answer = ask(
             request.message,
             history
-        )
-
-        # save user message
-        save_message(
-            request.session_id,
-            "user",
-            request.message
-        )
-
-        # save assistant message
-        save_message(
-            request.session_id,
-            "assistant",
-            answer
         )
 
         return ChatResponse(

@@ -599,6 +599,7 @@ def detect_language(text: str) -> str:
 
 REQUIRED_BOOKING_FIELDS = [
     "service_type",
+    "issue_description",
     "governorate",
     "city",
     "street",
@@ -634,6 +635,7 @@ def enforce_action_guard(data: dict, language: str) -> dict:
         ask_again = {
             "provider_name": "ممكن اسم الفني اللي تحب تحجز معاه؟" if language == "Arabic" else "What's the name of the provider you'd like to book?",
             "service_type": "تحب تحجز أنهي خدمة بالظبط؟" if language == "Arabic" else "Which service would you like to book?",
+            "issue_description": "إيه المشكلة أو الشغلانة اللي محتاج تتعمل بالظبط؟" if language == "Arabic" else "What exactly is the problem or task you need done?",
             "governorate": "في أنهي محافظة؟" if language == "Arabic" else "Which governorate is this for?",
             "city": "في أنهي مدينة أو حي؟" if language == "Arabic" else "Which city or area?",
             "street": "ممكن اسم الشارع؟" if language == "Arabic" else "What's the street?",
@@ -670,6 +672,7 @@ def merge_extracted_slots(data: dict, extracted_slots: dict) -> dict:
 
     field_map = {
         "service_type": "service_type",
+        "issue_description": "issue_description",
         "provider_name": "provider_name",
         "governorate": "governorate",
         "city": "city",

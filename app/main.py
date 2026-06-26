@@ -41,6 +41,7 @@ def chat(request: ChatRequest):
                 answer=ai_response.get("text_response", ""),
                 response_type=ai_response.get("response_type", "rag"),
                 service_type=ai_response.get("service_type"),
+                issue_description=ai_response.get("issue_description"),
                 provider_name=ai_response.get("provider_name"),
                 governorate=ai_response.get("governorate"),
                 city=ai_response.get("city"),

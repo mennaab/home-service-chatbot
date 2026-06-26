@@ -27,6 +27,10 @@ class ServEaseResponseSchema(BaseModel):
         description="الرد النصي المباشر والودود المناسب للمستخدم، ويجب أن يكون بنفس لغة المستخدم تماماً. THIS FIELD MUST ALWAYS BE PRESENT."
     )
     service_type: Optional[ServiceType] = Field(default=None)
+    issue_description: Optional[str] = Field(
+        default=None,
+        description="A brief description of the specific problem or task the user needs done (e.g. 'power outlet not working', 'pipe leaking under sink'). Always in English."
+    )
     provider_name: Optional[str] = Field(default=None)
     governorate: Optional[Governorate] = Field(default=None)
     city: Optional[City] = Field(default=None)
@@ -52,6 +56,10 @@ class ServEaseResponseSchema(BaseModel):
 # is its only task.
 class BookingSlotsSchema(BaseModel):
     service_type: Optional[ServiceType] = Field(default=None, description="The type of service the user needs.")
+    issue_description: Optional[str] = Field(
+        default=None,
+        description="Brief description of the specific problem or task (e.g. 'pipe leaking under sink', 'AC not cooling'). Extract from user's words. Always in English."
+    )
     provider_name: Optional[str] = Field(default=None, description="Specific provider name, if mentioned.")
     governorate: Optional[Governorate] = Field(default=None, description="Derive from the city if not explicit.")
     city: Optional[City] = Field(default=None)
@@ -107,6 +115,7 @@ for anything not mentioned:
 
 {{
   "service_type": null,
+  "issue_description": null,
   "provider_name": null,
   "governorate": null,
   "city": null,
@@ -124,6 +133,12 @@ service_type must be one of: Plumbing, Electrical, Carpentry, Cleaning,
 Painting, AC Technician, Internet Technician, Appliance Repair, Handyman,
 CCTV Installation, Furniture Moving, Gardening, Pest Control (or null).
 
+issue_description is a brief English description of the specific problem or
+task the user needs done. Extract it from the user's own words and translate
+to English if needed (e.g. "فيه عطل في الكهرباء في المطبخ" → "electrical
+fault in the kitchen"). Keep it concise (under 20 words). null if not
+mentioned.
+
 payment_mode must be one of: "Fixed Price", "Hourly" (or null).
 
 exact_location is precise in-building detail BEYOND the street — building
@@ -140,10 +155,10 @@ or "بس في منطقتي" / "just my area" — do NOT guess or default it.
 wants_specific_provider is true/false/null (boolean, not string).
 
 Example:
-History: User: I need a plumber in Nasr City tomorrow at 5 PM. Assistant: specific provider or any? User: Khaled Mohamed. Assistant: What is your address and payment method? User: 12 Mostafa El Nahas Street, building 4 apartment 9, Fixed Price. Assistant: Confirming... User: Yes
+History: User: I need a plumber in Nasr City tomorrow at 5 PM, pipe leaking under the sink. Assistant: specific provider or any? User: Khaled Mohamed. Assistant: What is your address and payment method? User: 12 Mostafa El Nahas Street, building 4 apartment 9, Fixed Price. Assistant: Confirming... User: Yes
 Latest message: Yes
 Output:
-{{"service_type": "Plumbing", "provider_name": "Khaled Mohamed", "governorate": "Cairo", "city": "Nasr City", "street": "12 Mostafa El Nahas Street", "exact_location": "Building 4, Apartment 9", "preferred_date": "tomorrow", "preferred_time": "5 PM", "payment_mode": "Fixed Price", "preferred_price": null, "search_scope": null, "wants_specific_provider": true}}"""
+{{"service_type": "Plumbing", "issue_description": "pipe leaking under the sink", "provider_name": "Khaled Mohamed", "governorate": "Cairo", "city": "Nasr City", "street": "12 Mostafa El Nahas Street", "exact_location": "Building 4, Apartment 9", "preferred_date": "tomorrow", "preferred_time": "5 PM", "payment_mode": "Fixed Price", "preferred_price": null, "search_scope": null, "wants_specific_provider": true}}"""
     ),
     MessagesPlaceholder("chat_history"),
     ("human", "{input}")
@@ -284,12 +299,13 @@ STEP 1.5 — IF THE USER ALREADY GAVE EVERYTHING UPFRONT:
 STEP 2 — SLOT FILLING (collect all missing info):
   Required fields to ASK ABOUT, IN THIS ORDER:
     1. service_type
-    2. city
-    3. street
-    4. exact_location (building number / floor / apartment — precise location beyond the street)
-    5. preferred_date
-    6. preferred_time
-    7. payment_mode — ask: "هتفضل سعر ثابت للخدمة كلها ولا سعر بالساعة؟" (Fixed Price = one flat price for the whole job, Hourly = priced per hour worked)
+    2. issue_description — ask: "إيه المشكلة أو الشغلانة اللي محتاج تتعمل بالظبط؟" / "What exactly is the problem or task you need done?" — this must be specific enough for a technician to understand the job before arriving (e.g. "power outlet not working in kitchen", "pipe leaking under sink", "AC making noise and not cooling").
+    3. city
+    4. street
+    5. exact_location (building number / floor / apartment — precise location beyond the street)
+    6. preferred_date
+    7. preferred_time
+    8. payment_mode — ask: "هتفضل سعر ثابت للخدمة كلها ولا سعر بالساعة؟" (Fixed Price = one flat price for the whole job, Hourly = priced per hour worked)
   - IMPORTANT: Do NOT ask the user about 'governorate' separately. It is derived automatically from the city behind the scenes — asking about it is redundant. Only ask for the 'city'.
   - ALWAYS re-scan the user's CURRENT message for as many of these fields as they happened to mention together, even if you only asked about one of them — merge everything they gave you, then ask only about whatever single field is still missing next. Never ask about a field they already answered, even if they answered it ahead of being asked.
   - After payment_mode is set, you MAY optionally ask about 'preferred_price' (a rough budget/expected price in the user's mind, e.g. "في حدود سعر معين في دماغك؟"). This is OPTIONAL — if the user doesn't know or skips it, leave it null and move on. It is never required to proceed to STEP 3.

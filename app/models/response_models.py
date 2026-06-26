@@ -20,6 +20,7 @@ class ChatData(BaseModel):
     session_id: str
     response_type: Optional[ResponseType] = None
     service_type: Optional[ServiceType] = None
+    issue_description: Optional[str] = None
     provider_name: Optional[str] = None
     governorate: Optional[Governorate] = None
     city: Optional[City] = None

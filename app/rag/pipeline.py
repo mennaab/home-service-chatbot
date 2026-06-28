@@ -317,6 +317,31 @@ def normalize_search_scope(value):
     return match_to_canonical(value, VALID_SEARCH_SCOPES, SEARCH_SCOPE_ALIASES, field_name="search_scope")
 
 
+def normalize_preferred_price(value) -> float | None:
+    """
+    Extracts a numeric float from whatever the LLM returned for preferred_price.
+    Handles cases like: 400, "400", "400 EGP", "٤٠٠ جنيه", "حوالي 500", "~300".
+    Returns None if no valid number can be extracted (safer than crashing Pydantic).
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    import re
+    # Normalize Arabic-Indic digits to Western
+    arabic_indic = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+    text = str(value).translate(arabic_indic)
+    # Extract first number (int or decimal)
+    match = re.search(r"\d+(?:\.\d+)?", text)
+    if match:
+        try:
+            return float(match.group())
+        except ValueError:
+            pass
+    print(f"[WARN] normalize_preferred_price: could not parse '{value}' as float — setting null")
+    return None
+
+
 # =========================================================
 # RELATIVE DATE RESOLUTION
 # =========================================================
@@ -616,7 +641,14 @@ def enforce_action_guard(data: dict, language: str) -> dict:
     if data.get("response_type") not in ("specific_action", "broadcast_action"):
         return data
 
-    missing = [f for f in REQUIRED_BOOKING_FIELDS if not data.get(f)]
+    # preferred_time is only required for Fixed Price bookings.
+    # For Hourly, the provider sets their own schedule — preferred_time stays null.
+    is_hourly = data.get("payment_mode") == "Hourly"
+    required = [
+        f for f in REQUIRED_BOOKING_FIELDS
+        if not (f == "preferred_time" and is_hourly)
+    ]
+    missing = [f for f in required if not data.get(f)]
 
     if data.get("response_type") == "specific_action" and not data.get("provider_name"):
         missing.append("provider_name")
@@ -652,6 +684,44 @@ def enforce_action_guard(data: dict, language: str) -> dict:
                 else "I still need a few more details before I can proceed with the booking."
             )
         )
+
+    return data
+
+
+def upgrade_to_action_if_ready(data: dict, language: str) -> dict:
+    """
+    The LLM sometimes keeps response_type = 'rag' even after all required
+    booking fields are collected. This guard detects that case and upgrades
+    the response_type to the correct action automatically.
+
+    Upgrade only happens when ALL of these are true:
+    - response_type is currently 'rag'
+    - All required booking fields (per REQUIRED_BOOKING_FIELDS) are present
+    - For Fixed Price bookings: preferred_time is also present
+    - Either provider_name is set (→ specific_action) OR
+      provider_name is null but all other fields are filled (→ broadcast_action)
+    """
+    # Only upgrade if LLM returned 'rag'
+    if data.get("response_type") != "rag":
+        return data
+
+    is_hourly = data.get("payment_mode") == "Hourly"
+    required = [
+        f for f in REQUIRED_BOOKING_FIELDS
+        if not (f == "preferred_time" and is_hourly)
+    ]
+
+    # Check all required fields are filled
+    if not all(data.get(f) for f in required):
+        return data  # Still missing something — stay rag
+
+    # All fields present → upgrade
+    if data.get("provider_name"):
+        data["response_type"] = "specific_action"
+        print(f"[UPGRADE] All fields ready + provider_name set → specific_action")
+    else:
+        data["response_type"] = "broadcast_action"
+        print(f"[UPGRADE] All fields ready + no provider → broadcast_action")
 
     return data
 
@@ -693,6 +763,7 @@ def merge_extracted_slots(data: dict, extracted_slots: dict) -> dict:
         "payment_mode": normalize_payment_mode,
         "preferred_date": resolve_relative_date,
         "search_scope": normalize_search_scope,
+        "preferred_price": normalize_preferred_price,
     }
 
     for slot_key, data_key in field_map.items():
@@ -833,7 +904,8 @@ def ask(user_message: str, chat_history: list) -> dict:
     if hasattr(response, "model_dump"):
         data = response.model_dump()
         data = merge_extracted_slots(data, extracted_slots)
-        data = enforce_action_guard(data, language)
+        data = upgrade_to_action_if_ready(data, language)   # ← upgrade rag→action
+        data = enforce_action_guard(data, language)          # ← block premature action
         print("FINAL DATA:", data)
         return data
 
@@ -855,7 +927,8 @@ def ask(user_message: str, chat_history: list) -> dict:
             validated = ServEaseResponseSchema(**response)
             data = validated.model_dump()
             data = merge_extracted_slots(data, extracted_slots)
-            data = enforce_action_guard(data, language)
+            data = upgrade_to_action_if_ready(data, language)  # ← upgrade rag→action
+            data = enforce_action_guard(data, language)         # ← block premature action
             return data
         except Exception as e:
             print(f"[ERROR] dict validation failed: {e}")

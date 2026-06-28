@@ -10,7 +10,6 @@ from app.models.enums import (
     SearchScope,
 )
 
-# ضفنا الكلاس ده عشان الـ main.py يعرف يعمل له import وميضربش
 class ErrorResponse(BaseModel):
     code: str
     message: str
@@ -20,17 +19,18 @@ class ChatData(BaseModel):
     session_id: str
     response_type: Optional[ResponseType] = None
     service_type: Optional[ServiceType] = None
+    service_type_id: Optional[str] = None        # MongoDB _id for service
     issue_description: Optional[str] = None
     provider_name: Optional[str] = None
     governorate: Optional[Governorate] = None
     city: Optional[City] = None
-    street: Optional[str] = None            # الحقل الجديد للشارع
-    exact_location: Optional[str] = None    # الحقل الجديد للوكيشن التفصيلي
+    street: Optional[str] = None
+    exact_location: Optional[str] = None
     preferred_date: Optional[str] = None
-    preferred_time: Optional[str] = None    # الحقل الجديد للوقت
-    payment_mode: Optional[PaymentMode] = None      # الحقل الجديد لطريقة الدفع
-    preferred_price: Optional[float] = None # الحقل الجديد للسعر
-    search_scope: Optional[SearchScope] = None      # الحقل الجديد لنطاق البحث (Governorate / District)
+    preferred_time: Optional[str] = None
+    payment_mode: Optional[PaymentMode] = None
+    preferred_price: Optional[float] = None
+    search_scope: Optional[SearchScope] = None
 
 class ChatResponse(BaseModel):
     success: bool

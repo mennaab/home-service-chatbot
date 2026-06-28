@@ -2,18 +2,6 @@
 =========================================================
 SHARED ENUMS / LITERAL TYPES
 =========================================================
-ده الملف المصدر الوحيد لكل القيم المحددة (enums) المستخدمة في:
-  1. app/rag/prompts.py     → ServEaseResponseSchema, BookingSlotsSchema (سكيمات الـ LLM)
-  2. app/models/response_models.py → ChatData (الـ schema اللي بترجع للباكند/الـ frontend)
-
-السبب: قبل كده كانت كل لستة (محافظات/مدن/...) متكررة في أكتر من ملف، وده بيخلي
-احتمال إنها "تتنسى" تتحدث في مكان وتفضل قديمة في مكان تاني. دلوقتي أي تعديل
-(إضافة مدينة جديدة، خدمة جديدة، ...) بيحصل هنا مرة واحدة بس وبينعكس في كل مكان.
-
-كمان: بما إن ChatData بقت بتستخدم نفس الـ Literal types دي، الـ Swagger / OpenAPI
-docs هتعرض القيم الممكنة الفعلية لكل حقل (enum dropdown) بدل ما تظهر كـ "string"
-عامة، فأي حد بيستهلك الـ API (باكند، فرونت إند) يقدر يشوف من الـ docs نفسها
-إيه الخيارات المتاحة بالظبط لكل حقل، من غير ما يحتاج يسأل أو يخمن.
 """
 
 from typing import Literal
@@ -29,7 +17,9 @@ ResponseType = Literal["rag", "specific_action", "broadcast_action"]
 ServiceType = Literal[
     "Plumbing", "Electrical", "Carpentry", "Cleaning", "Painting",
     "AC Technician", "Internet Technician", "Appliance Repair",
-    "Handyman", "CCTV Installation", "Furniture Moving", "Gardening", "Pest Control"
+    "Handyman", "CCTV Installation", "Furniture Moving", "Gardening",
+    "Pest Control", "Water Heater Technician", "Satellite Technician",
+    "Locksmith", "Gas"
 ]
 
 # =========================================================
@@ -92,16 +82,10 @@ PaymentMode = Literal["Fixed Price", "Hourly"]
 SearchScope = Literal["Governorate", "District"]
 
 # =========================================================
-# PLAIN LIST VERSIONS (for runtime use: normalization, validation, etc.)
+# PLAIN LIST VERSIONS (for runtime use in pipeline.py)
 # =========================================================
-# Literal[...] objects aren't directly iterable at runtime in a clean way,
-# so pipeline.py's normalizers (match_to_canonical, alias lookup tables,
-# fuzzy matching, etc.) need plain list copies of the same values.
-# These MUST stay in sync with the Literal definitions above — since they're
-# derived directly via .__args__, they always will be.
-
 VALID_SERVICE_TYPES = list(ServiceType.__args__)
-VALID_GOVERNORATES = list(Governorate.__args__)
-VALID_CITIES = list(City.__args__)
+VALID_GOVERNORATES  = list(Governorate.__args__)
+VALID_CITIES        = list(City.__args__)
 VALID_PAYMENT_MODES = list(PaymentMode.__args__)
 VALID_SEARCH_SCOPES = list(SearchScope.__args__)

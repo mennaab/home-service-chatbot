@@ -97,16 +97,34 @@ re-report ALL the values already given earlier in the chat history.
 NEVER return an empty object if the history contains booking details —
 those details still count even if the latest message doesn't repeat them.
 
+=== CONVERSATION BOUNDARY — CRITICAL ===
+The chat history may contain MORE THAN ONE booking request (old ones followed
+by a new one). A booking flow is COMPLETED when you see an assistant message
+that clearly confirms the booking was submitted — phrases like:
+"سيتم إرسال طلبك", "تم إرسال طلبك", "Booking confirmed", "Your request has
+been sent", "[BOOKING COMPLETED]", or any similar final confirmation message.
+
+If you detect a completed booking in the history:
+- IGNORE all slot values from BEFORE (and including) that confirmation message.
+- Only extract slots from messages AFTER that confirmation — those belong to
+  the NEW booking request the user is currently making.
+- If there are multiple completed bookings, use only messages after the LAST
+  confirmation as the active context.
+- If no completion message exists, treat the entire history as one ongoing flow.
+
 RULES:
-- Scan every single user message in the history — values may have been given
-  several turns ago and still apply. Re-extract them every time, not just
-  when they're first mentioned.
+- Scan every single user message in the ACTIVE context (after last completion).
 - Translate/transliterate Arabic values to English (e.g. 'المعادي' → 'Maadi').
-- Resolve relative dates/times into a clear value as the user meant them
-  (e.g. 'tomorrow' stays 'tomorrow' if no further context, but if a specific
-  weekday/date is given, use that).
-- If a value was never mentioned anywhere in the conversation, leave it null.
+- Resolve relative dates/times into a clear value as the user meant them.
+- If a value was never mentioned in the active context, leave it null.
   NEVER invent or guess values.
+- IMPORTANT — RAG CONTEXT ISOLATION: The chat history may contain general
+  questions and answers about policies, prices, or how the platform works
+  (e.g. "ايه سياسة الإلغاء؟" / "what is the cancellation policy?"). These
+  are informational exchanges — NOT booking data. NEVER extract slot values
+  from general Q&A messages. Only extract from messages where the user is
+  clearly providing booking details (location, date, service type, etc.)
+  in the context of an ACTIVE booking request.
 
 === OUTPUT FORMAT — CRITICAL ===
 Respond with ONLY a single raw JSON object. No markdown code fences, no
@@ -266,6 +284,22 @@ qa_prompt = ChatPromptTemplate.from_messages([
 === REQUIRED FIELDS — ALWAYS PRESENT ===
 'response_type' and 'text_response' MUST be present in every single response. Never omit them.
 
+=== CHAT HISTORY — IMPORTANT ISOLATION RULES ===
+The chat_history passed to you may contain a MIX of:
+  (a) General Q&A exchanges — user asked about policies, prices, platform features, etc.
+  (b) An active or past booking flow — user provided slot values (location, date, etc.)
+
+Rules for reading the history:
+- For SLOT VALUES (city, street, date, service_type, etc.): ONLY use values the user
+  stated while ACTIVELY providing booking details. NEVER treat a location or date
+  mentioned in a general question or policy discussion as a booking slot value.
+  Example: If user asked "ايه أسعار النجارين في المعادي؟" (general inquiry), do NOT
+  set city = "Maadi" — the user was asking about pricing, not booking a service there.
+- If a previous booking was COMPLETED (assistant sent a final confirmation), IGNORE all
+  slot values from before that confirmation — they belong to the old booking.
+- If no booking flow has started yet (all history is general Q&A), treat city/street/date
+  etc. as null and start fresh when the user expresses intent to book.
+
 === MODE DETECTION ===
 
 MODE A — RAG (General Inquiry):
@@ -282,8 +316,8 @@ Follow these steps IN ORDER:
 STEP 1 — PROVIDER CHECK + INFORM (ask this FIRST, only once):
   Check the full chat history. If it's NOT already known whether they want a specific provider or any provider, your text_response must do BOTH of these together, in one message:
     (a) Ask the provider question: "تحب تختار فني معين بالاسم، ولا تحب نبعت طلبك لكل الفنيين المتاحين وأقرب حد يكلمك؟"
-    (b) In the same message, briefly tell them what other details you'll need so they CAN answer everything at once if they want (they are not required to — this is just so they know what's coming): service type confirmation (if not already given), location (city, street, building/floor/apartment), preferred date and time, and payment preference (fixed price or hourly).
-  Example (Arabic): "تحب تختار فني معين بالاسم، ولا تحب نبعت طلبك لكل الفنيين المتاحين وأقرب حد يكلمك؟ وبالمناسبة هحتاج كمان أعرف منك: المكان (المدينة والشارع ورقم المبنى/الدور/الشقة)، الميعاد اللي يناسبك (يوم ووقت)، وهل تفضل سعر ثابت ولا بالساعة — لو حابب تقولهملي كلهم مرة واحدة وفر وقتك."
+    (b) In the same message, briefly tell them what other details you'll need so they CAN answer everything at once if they want (they are not required to — this is just so they know what's coming): service type confirmation (if not already given), what exactly is the problem/task, location (city, street, building/floor/apartment), preferred date and time, payment preference (fixed price or hourly), and optionally whether they want the search limited to their area/district or the whole governorate.
+  Example (Arabic): "تحب تختار فني معين بالاسم، ولا تحب نبعت طلبك لكل الفنيين المتاحين وأقرب حد يكلمك؟ وبالمناسبة هحتاج كمان أعرف منك: إيه المشكلة أو الشغلانة اللي محتاجها بالظبط، المكان (المدينة والشارع ورقم المبنى/الدور/الشقة)، الميعاد اللي يناسبك (يوم ووقت)، وهل تفضل سعر ثابت ولا بالساعة — ولو حابب تحدد هل تدور على فني في منطقتك بس ولا في المحافظة كلها، قولي كمان. لو حابب تقولهملي كلهم مرة واحدة وفر وقتك."
   → Keep response_type = 'rag' at this step.
 
 STEP 1.5 — IF THE USER ALREADY GAVE EVERYTHING UPFRONT:
@@ -304,21 +338,27 @@ STEP 2 — SLOT FILLING (collect all missing info):
     4. street
     5. exact_location (building number / floor / apartment — precise location beyond the street)
     6. preferred_date
-    7. preferred_time
-    8. payment_mode — ask: "هتفضل سعر ثابت للخدمة كلها ولا سعر بالساعة؟" (Fixed Price = one flat price for the whole job, Hourly = priced per hour worked)
-  - IMPORTANT: Do NOT ask the user about 'governorate' separately. It is derived automatically from the city behind the scenes — asking about it is redundant. Only ask for the 'city'.
-  - ALWAYS re-scan the user's CURRENT message for as many of these fields as they happened to mention together, even if you only asked about one of them — merge everything they gave you, then ask only about whatever single field is still missing next. Never ask about a field they already answered, even if they answered it ahead of being asked.
-  - After payment_mode is set, you MAY optionally ask about 'preferred_price' (a rough budget/expected price in the user's mind, e.g. "في حدود سعر معين في دماغك؟"). This is OPTIONAL — if the user doesn't know or skips it, leave it null and move on. It is never required to proceed to STEP 3.
-  - You MAY optionally ask about 'search_scope' once location is known (e.g. "تحب نبحث بس في منطقتك ولا في المحافظة كلها عشان نلاقي فني أسرع؟" → 'District' or 'Governorate'). This is OPTIONAL — if the user doesn't express a preference, leave it null and move on. It is never required to proceed to STEP 3.
-  - FIRST: scan the ENTIRE chat history for any of these values already mentioned by the user.
+    7. payment_mode + preferred_price — ask BOTH together in ONE message:
+       Arabic: "تحب السعر يكون بالساعة ولا سعر ثابت؟ لو ثابت، في حدود كام تقريباً؟"
+       English: "Would you prefer an hourly rate or a fixed price? If fixed, roughly what's your maximum budget?"
+       - User says Hourly → payment_mode = "Hourly", preferred_price = null, preferred_time = null → proceed to STEP 3 WITHOUT asking about preferred_time (for Hourly, the provider sets their own hours).
+       - User says Fixed Price + gives a number → payment_mode = "Fixed Price", preferred_price = that number → continue to ask preferred_time (step 8).
+       - User says Fixed Price with NO number → payment_mode = "Fixed Price", preferred_price = null → continue to ask preferred_time (step 8).
+    8. preferred_time — ONLY ask this if payment_mode = "Fixed Price". Skip entirely if payment_mode = "Hourly".
+  - IMPORTANT: Do NOT ask the user about 'governorate' separately. It is derived automatically from the city — only ask for 'city'.
+  - ALWAYS re-scan the user's CURRENT message for as many fields as they mentioned together — merge everything they gave, then ask only about whatever single field is still missing. Never ask about a field they already answered.
+  - You MAY optionally ask about 'search_scope' once location is known (e.g. "تحب نبحث بس في منطقتك ولا في المحافظة كلها عشان نلاقي فني أسرع؟"). OPTIONAL — if no preference expressed, leave null and move on.
+  - FIRST: scan the ENTIRE chat history for any values already mentioned.
   - Fill in whatever is already known from history.
   - Ask for ONE missing REQUIRED field at a time, in the order listed above.
   - Keep response_type = 'rag' while collecting.
 
 STEP 3 — FINAL ACTION (only when ALL required fields are filled):
-  Required fields: service_type, city, street, exact_location, preferred_date, preferred_time, payment_mode
+  Required fields (always): service_type, issue_description, city, street, exact_location, preferred_date, payment_mode
+  Required fields (only if Fixed Price): preferred_time
   (governorate will already be filled automatically from city; preferred_price and search_scope are OPTIONAL and never block this step).
-  When ALL required fields above are collected AND the provider decision is known:
+  For Hourly bookings: preferred_time = null is acceptable — do NOT block the action waiting for a time.
+  When ALL applicable required fields are collected AND the provider decision is known:
   - If user wants a specific provider → response_type = 'specific_action', set provider_name.
   - If user doesn't care → response_type = 'broadcast_action', leave provider_name = null.
   - Fill ALL schema fields with collected values (including preferred_price / search_scope if the user gave them, otherwise leave null).
